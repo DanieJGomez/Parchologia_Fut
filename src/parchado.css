@@ -54,6 +54,34 @@
     background: rgba(255,255,255,0.08);
     padding:6px;
   }
+  .brand-sticker{
+    width:90px;
+    height:100px;
+    object-fit:contain;
+    border-radius:16px;
+    display:block;
+    filter: drop-shadow(0 7px 14px rgba(0,0,0,0.22));
+  }
+  .section-header-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-top:28px;
+    margin-bottom:8px;
+  }
+  .section-header-row h2{
+    margin:0;
+  }
+  .section-sticker{
+    width:102px;
+    height:120px;
+    object-fit:contain;
+    border-radius:12px;
+    display:block;
+    filter: drop-shadow(0 6px 12px rgba(0,0,0,0.18));
+    flex-shrink:0;
+  }
   header.top h1{
     font-family:Georgia, serif;
     font-weight:600;

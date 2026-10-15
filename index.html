@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cruce de Horarios Parchado</title>
+<title>Cruce de Horarios</title>
 <link rel="icon" href="./src/Ico/logo.ico" type="image/x-icon">
 <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-straight/css/uicons-regular-straight.css">
 <link rel="stylesheet" href="./src/parchado.css">
@@ -13,8 +13,8 @@
 
   <header class="top">
     <div class="brand-row">
-      <i class="fi fi-rs-users-alt brand-logo" aria-hidden="true"></i>
       <h1>Cruce de Horarios</h1>
+      <img class="brand-sticker" src="./src/stiker.webp" alt="Sticker de Cruce de Horarios">
     </div>
     <div class="sub">Cada quien registra sus <b>clases</b> por día, hora y sede. La app calcula los <b>huecos</b> entre la primera y la última clase de cada día y arma un solo horario con los momentos en que varios pueden coincidir.</div>
   </header>
@@ -63,7 +63,10 @@
       <button class="btn btn-save" id="saveBtn" disabled>Guardar mi horario</button>
       <div class="status-msg" id="statusMsg"></div>
 
-      <h2 style="margin-top:28px;">Compañeros registrados</h2>
+      <div class="section-header-row">
+        <h2>Compañeros registrados</h2>
+        <img class="section-sticker" src="./src/stiker.webp" alt="Sticker de compañeros registrados">
+      </div>
       <div class="compas-list" id="compasList">
         <div class="empty-note">Todavía nadie ha registrado su horario.</div>
       </div>
