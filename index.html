@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruce de Horarios Parchado</title>
+<link rel="icon" href="./src/Ico/logo.ico" type="image/x-icon">
+<link rel="stylesheet" href="https://cdn-uicons.flaticon.com/uicons-regular-straight/css/uicons-regular-straight.css">
+<link rel="stylesheet" href="./src/parchado.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand-row">
+      <i class="fi fi-rs-users-alt brand-logo" aria-hidden="true"></i>
+      <h1>Cruce de Horarios</h1>
+    </div>
+    <div class="sub">Cada quien registra sus <b>clases</b> por día, hora y sede. La app calcula los <b>huecos</b> entre la primera y la última clase de cada día y arma un solo horario con los momentos en que varios pueden coincidir.</div>
+  </header>
+
+  <div class="layout">
+
+    <!-- FORMULARIO -->
+    <div class="card">
+      <h2>Agrega tu horario</h2>
+      <p class="hint">Escribe tu nombre, elige un día, marca la sede, la materia y el rango de horas de cada clase, y agrégala a la lista. Al terminar, guarda. La app deduce tus huecos sola.</p>
+
+      <label for="nombre">Tu nombre</label>
+      <div class="student-name-row">
+        <input type="text" id="nombre" placeholder="... ">
+        <label class="color-picker-label" for="colorEstudiante" title="Elige un color único para identificarte">
+          <span>Color</span>
+          <input type="color" id="colorEstudiante" value="#E8A87C" aria-label="Color único del estudiante">
+        </label>
+      </div>
+      <div class="color-hint" id="colorHint">Elige un color que no esté asignado a otro estudiante.</div>
+
+      <label>Día</label>
+      <div class="day-toggle" id="dayToggle"></div>
+
+      <label for="sede">Sede</label>
+      <input type="text" id="sede" list="sedeList" placeholder="Ej: Macarena">
+      <datalist id="sedeList"></datalist>
+
+      <label for="materia">Materia </label>
+      <input type="text" id="materia" list="materiaList" placeholder="Ej: Cálculo II">
+      <datalist id="materiaList"></datalist>
+
+      <div class="row3">
+        <div>
+          <label for="inicio">Desde</label>
+          <input type="time" id="inicio" value="08:00">
+        </div>
+        <div>
+          <label for="fin">Hasta</label>
+          <input type="time" id="fin" value="10:00">
+        </div>
+      </div>
+
+      <button class="btn btn-add" id="addBloque">+ Agregar esta clase</button>
+
+      <div class="bloques-list" id="bloquesList"></div>
+
+      <button class="btn btn-save" id="saveBtn" disabled>Guardar mi horario</button>
+      <div class="status-msg" id="statusMsg"></div>
+
+      <h2 style="margin-top:28px;">Compañeros registrados</h2>
+      <div class="compas-list" id="compasList">
+        <div class="empty-note">Todavía nadie ha registrado su horario.</div>
+      </div>
+    </div>
+
+    <!-- COMBINADO -->
+    <div class="card">
+      <h2>Horario combinado</h2>
+      <p class="hint">Alterna entre <b>Clases</b> y <b>Huecos</b>. Entre más oscura la celda, más gente hay a esa hora. Haz clic en una celda para ver quiénes son.</p>
+
+      <div class="combo-toolbar">
+        <div class="day-toggle" id="viewToggle" style="width:auto;">
+          <button id="viewClases" class="active">Clases</button>
+          <button id="viewHuecos">Huecos</button>
+        </div>
+        <select id="sedeFiltro">
+          <option value="">Todas las sedes</option>
+        </select>
+        <button class="btn" id="refreshBtn" style="background:var(--paper-alt); color:var(--ink); border:1px solid var(--line); padding:8px 12px; font-size:13px;">↻ Actualizar</button>
+        <div id="cruceBar" style="display:none; align-items:center; gap:6px;">
+          <select id="cruceTipo">
+            <option value="clases">Clases en común (misma materia, hora y sede)</option>
+            <option value="huecos">Huecos en común</option>
+          </select>
+        </div>
+        <div class="legend">
+          <span>Menos</span>
+          <span class="swatch" style="background:#fff; border:1px solid var(--line);"></span>
+          <span class="swatch" style="background: rgba(111,160,190,0.35);"></span>
+          <span class="swatch" style="background: rgba(111,160,190,0.65);"></span>
+          <span class="swatch" style="background: rgba(111,160,190,0.95);"></span>
+          <span>Más</span>
+        </div>
+      </div>
+
+      <div class="grid-scroll">
+        <table class="grid" id="comboTable"></table>
+      </div>
+
+      <div class="detail-panel" id="detailPanel">
+        <span class="empty-note">Haz clic en una celda del horario para ver el detalle de quién tiene hueco.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DIAS = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const HORAS_INICIO = 6;  // 06:00
+const HORAS_FIN = 21;    // hasta 21:00
+const API_URL = "http://127.0.0.1:5000/api";
+
+
+let currentDay = DIAS[0];
+let pendingBloques = []; 
+let personas = {};
+let huecosData = [];
+let viewMode = "clases";
+let selectedNombres = new Set();
+let cruceTipo = "clases";
+let cruceData = [];
+let selectedCell = null;
+
+// ---------- utilidades ----------
+function colorInUse(color, nombre = ""){
+  const normalizedColor = color.toLowerCase();
+  const normalizedName = nombre.trim().toLowerCase();
+  return Object.values(personas).some(p => p.color.toLowerCase() === normalizedColor && p.nombre.toLowerCase() !== normalizedName);
+}
+function updateColorState(){
+  const input = document.getElementById("colorEstudiante");
+  const hint = document.getElementById("colorHint");
+  const used = colorInUse(input.value, document.getElementById("nombre").value);
+  input.setCustomValidity(used ? "Este color ya está asignado a otro estudiante." : "");
+  hint.textContent = used ? "Ese color ya está en uso. Elige otro." : "Elige un color que no esté asignado a otro estudiante.";
+  hint.classList.toggle("color-hint-error", used);
+  updateSaveState();
+}
+function toMin(t){ const [h,m] = t.split(":").map(Number); return h*60+m; }
+function fmtRange(i,f){ return i + "–" + f; }
+
+// ---------- día toggle ----------
+function renderDayToggle(){
+  const box = document.getElementById("dayToggle");
+  box.innerHTML = "";
+  DIAS.forEach(d=>{
+    const b = document.createElement("button");
+    b.textContent = d;
+    if(d===currentDay) b.classList.add("active");
+    b.onclick = ()=>{ currentDay = d; renderDayToggle(); };
+    box.appendChild(b);
+  });
+}
+
+// ---------- bloques pendientes ----------
+function renderBloques(){
+  const list = document.getElementById("bloquesList");
+  list.innerHTML = "";
+  pendingBloques.forEach((b,idx)=>{
+    const item = document.createElement("div");
+    item.className = "bloque-item";
+    item.innerHTML = `<span><b>${b.dia}</b> · ${b.materia} · ${b.sede} · ${fmtRange(b.inicio,b.fin)}</span>`;
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "×";
+    x.onclick = ()=>{ pendingBloques.splice(idx,1); renderBloques(); updateSaveState(); };
+    item.appendChild(x);
+    list.appendChild(item);
+  });
+  updateSaveState();
+}
+function updateSaveState(){
+  const nombre = document.getElementById("nombre").value.trim();
+  document.getElementById("saveBtn").disabled = !(nombre && pendingBloques.length>0 && !colorInUse(document.getElementById("colorEstudiante").value, nombre));
+}
+
+document.getElementById("addBloque").onclick = ()=>{
+  const sede = document.getElementById("sede").value.trim();
+  const materia = document.getElementById("materia").value.trim();
+  const inicio = document.getElementById("inicio").value;
+  const fin = document.getElementById("fin").value;
+  const status = document.getElementById("statusMsg");
+    if(!sede){ status.textContent = "Escribe la sede de esta clase."; status.className="status-msg err"; return; }
+  if(!materia){ status.textContent = "Escribe la materia de esta clase."; status.className="status-msg err"; return; }
+  if(!inicio || !fin || toMin(fin) <= toMin(inicio)){
+    status.textContent = "La hora final debe ser después de la inicial."; status.className="status-msg err"; return;
+  }
+  pendingBloques.push({dia: currentDay, sede, materia, inicio, fin});
+  status.textContent = ""; status.className="status-msg";
+  renderBloques();
+};
+
+document.getElementById("nombre").addEventListener("input", updateSaveState);
+document.getElementById("nombre").addEventListener("input", updateColorState);
+document.getElementById("colorEstudiante").addEventListener("input", updateColorState);
+document.getElementById("nombre").addEventListener("blur", async (e)=>{
+  const nombre = e.target.value.trim();
+  if(!nombre) return;
+  const existing = personas[nombre.toLowerCase()];
+  if(existing && pendingBloques.length===0){
+    pendingBloques = existing.bloques.map(b=>({...b}));
+    document.getElementById("colorEstudiante").value = existing.color;
+    updateColorState();
+    renderBloques();
+    const status = document.getElementById("statusMsg");
+    status.textContent = "Encontramos un horario guardado con este nombre, lo cargamos para que lo edites.";
+    status.className = "status-msg ok";
+  }
+});
+
+// ---------- guardar horario en la API ----------
+document.getElementById("saveBtn").onclick = async ()=>{
+  const nombre = document.getElementById("nombre").value.trim();
+  const status = document.getElementById("statusMsg");
+  if(!nombre || pendingBloques.length===0) return;
+  const data = { nombre, color: document.getElementById("colorEstudiante").value, bloques: pendingBloques };
+  if(colorInUse(data.color, nombre)){
+    status.textContent = "Ese color ya está asignado a otro estudiante. Elige otro."; status.className="status-msg err"; return;
+  }
+  status.textContent = "Guardando..."; status.className="status-msg";
+  try{
+    const res = await fetch(`${API_URL}/estudiantes`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+    if(!res.ok) throw new Error(result.error || "No se pudo guardar el horario.");
+    status.textContent = "¡Horario guardado! Actualizando el cruce de todos..."; status.className="status-msg ok";
+    await loadPersonas();
+  }catch(err){
+    status.textContent = err.message || "No se pudo conectar con la API. Verifica que esté iniciada."; status.className="status-msg err";
+  }
+};
+
+// ---------- cargar personas desde la API ----------
+async function loadPersonas(){
+  try{
+    const res = await fetch(`${API_URL}/estudiantes`);
+    if(!res.ok) throw new Error("respuesta no ok");
+    const arr = await res.json();
+    personas = {};
+    arr.forEach(d=>{ personas[d.nombre.toLowerCase()] = d; });
+    try{
+      const resH = await fetch(`${API_URL}/huecos`);
+      if(!resH.ok) throw new Error("respuesta no ok");
+      huecosData = await resH.json();
+    }catch(e){
+      console.error("No se pudieron leer los huecos", e);
+      huecosData = [];
+    }
+  }catch(e){
+    console.error("No se pudo leer la API", e);
+  }
+  renderCompas();
+  renderSedeFiltro();
+  // podar seleccionados que ya no existen
+  const existentes = new Set(Object.values(personas).map(p=>p.nombre));
+  selectedNombres = new Set([...selectedNombres].filter(n=>existentes.has(n)));
+  await loadCruce();
+}
+
+// ---------- cruce entre seleccionados ----------
+async function loadCruce(){
+  const bar = document.getElementById("cruceBar");
+  if(selectedNombres.size < 2){
+    cruceData = [];
+    bar.style.display = "none";
+    document.getElementById("sedeFiltro").disabled = viewMode === "huecos";
+    renderCombo();
+    return;
+  }
+  bar.style.display = "flex";
+  document.getElementById("sedeFiltro").disabled = true;
+  try{
+    const params = new URLSearchParams({ nombres:[...selectedNombres].join(","), tipo:cruceTipo });
+    const res = await fetch(`${API_URL}/cruce?${params}`);
+    if(!res.ok) throw new Error("respuesta no ok");
+    cruceData = await res.json();
+  }catch(e){
+    console.error("No se pudo calcular el cruce", e);
+    cruceData = [];
+  }
+  renderCombo();
+}
+document.getElementById("cruceTipo").addEventListener("change", (e)=>{ cruceTipo = e.target.value; selectedCell=null; loadCruce(); });
+
+function enModoCruce(){ return selectedNombres.size >= 2; }
+
+function renderCompas(){
+  const box = document.getElementById("compasList");
+  const arr = Object.values(personas);
+  if(arr.length===0){
+    box.innerHTML = '<div class="empty-note">Todavía nadie ha registrado su horario.</div>';
+    return;
+  }
+  box.innerHTML = "";
+  arr.sort((a,b)=>a.nombre.localeCompare(b.nombre)).forEach(p=>{
+    const el = document.createElement("div");
+    el.className = "compa-card";
+    const materias = [...new Set(p.bloques.map(b=>b.materia))].join(", ");
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.className = "compa-check";
+    chk.title = "Selecciona 2 o más para cruzar sus horarios";
+    chk.checked = selectedNombres.has(p.nombre);
+    chk.onclick = ()=>{
+      if(chk.checked) selectedNombres.add(p.nombre); else selectedNombres.delete(p.nombre);
+      loadCruce();
+    };
+    el.appendChild(chk);
+    el.innerHTML += `
+      <span class="compa-dot" style="background:${p.color}"></span>
+      <span class="compa-info">
+        <div class="compa-name">${p.nombre}</div>
+        <div class="compa-meta">${p.bloques.length} clase(s) · ${materias}</div>
+      </span>
+    `;
+    const del = document.createElement("button");
+    del.className = "compa-del"; del.textContent = "eliminar";
+    del.onclick = async ()=>{
+      if(confirm(`¿Eliminar el horario de ${p.nombre}?`)){
+        del.textContent = "...";
+        try{
+          await fetch(`${API_URL}/estudiantes/${encodeURIComponent(p.nombre)}`, { method:"DELETE" });
+        }catch(e){ /* seguimos e intentamos recargar igual */ }
+        await loadPersonas();
+      }
+    };
+    el.appendChild(del);
+    box.appendChild(el);
+  });
+}
+
+function renderSedeFiltro(){
+  const sel = document.getElementById("sedeFiltro");
+  const current = sel.value;
+  const sedes = new Set();
+  const materias = new Set();
+  Object.values(personas).forEach(p=>p.bloques.forEach(b=>{ sedes.add(b.sede); materias.add(b.materia); }));
+  const datalist = document.getElementById("sedeList");
+  datalist.innerHTML = "";
+  sel.innerHTML = '<option value="">Todas las sedes</option>';
+  [...sedes].sort().forEach(s=>{
+    const o1 = document.createElement("option"); o1.value = s; sel.appendChild(o1);
+    const o2 = document.createElement("option"); o2.value = s; datalist.appendChild(o2);
+  });
+  sel.value = current;
+
+  const materiaDatalist = document.getElementById("materiaList");
+  materiaDatalist.innerHTML = "";
+  [...materias].sort().forEach(m=>{
+    const o = document.createElement("option"); o.value = m; materiaDatalist.appendChild(o);
+  });
+}
+document.getElementById("sedeFiltro").addEventListener("change", ()=>{ selectedCell=null; renderCombo(); });
+
+// ---------- toggle Clases / Huecos ----------
+document.querySelectorAll("#viewToggle button").forEach(btn=>{
+  btn.onclick = ()=>{
+    viewMode = btn.dataset.mode || btn.id.replace("view","").toLowerCase();
+    document.querySelectorAll("#viewToggle button").forEach(b=>b.classList.toggle("active", b===btn));
+    document.getElementById("sedeFiltro").disabled = viewMode === "huecos" || enModoCruce();
+    selectedCell = null;
+    document.getElementById("detailPanel").innerHTML =
+      '<span class="empty-note">Haz clic en una celda del horario para ver el detalle.</span>';
+    renderCombo();
+  };
+});
+
+// ---------- huecos en una franja ----------
+function gapsInSlot(dia, hIni){
+  const hFin = hIni+1;
+  const out = [];
+  huecosData.forEach(p=>{
+    if(p.dia !== dia) return;
+    p.huecos.forEach(g=>{
+      if(toMin(g.inicio) < hFin*60 && toMin(g.fin) > hIni*60){
+        out.push({ nombre:p.nombre, color:p.color,
+          rango: fmtRange(g.inicio,g.fin),
+          materia_antes: g.materia_antes, materia_despues: g.materia_despues });
+      }
+    });
+  });
+  return out;
+}
+
+// ---------- cruce en una franja ----------
+function cruceInSlot(dia, hIni){
+  const hFin = hIni+1;
+  const seen = new Map();
+  cruceData.forEach(c=>{
+    if(c.dia !== dia) return;
+    if(toMin(c.inicio) < hFin*60 && toMin(c.fin) > hIni*60){
+      const key = `${c.inicio}-${c.fin}-${c.materia}-${c.sede}`;
+      if(!seen.has(key)) seen.set(key, c);
+    }
+  });
+  return [...seen.values()];
+}
+
+// ---------- horario combinado ----------
+function personsInSlot(dia, hIni, sedeFiltro){
+  const hFin = hIni+1;
+  const out = [];
+  Object.values(personas).forEach(p=>{
+    p.bloques.forEach(b=>{
+      if(b.dia !== dia) return;
+      if(sedeFiltro && b.sede !== sedeFiltro) return;
+      if(toMin(b.inicio) < hFin*60 && toMin(b.fin) > hIni*60){
+        out.push({nombre:p.nombre, color:p.color, sede:b.sede, materia:b.materia, rango:fmtRange(b.inicio,b.fin)});
+      }
+    });
+  });
+  return out;
+}
+
+function renderCombo(){
+  const table = document.getElementById("comboTable");
+  const sedeFiltro = document.getElementById("sedeFiltro").value;
+  const cruce = enModoCruce();
+  const nPersonas = cruce ? selectedNombres.size
+    : viewMode === "huecos" ? new Set(huecosData.map(p=>p.nombre)).size
+    : Object.keys(personas).length;
+
+  let thead = "<thead><tr><th></th>" + DIAS.map(d=>`<th>${d}</th>`).join("") + "</tr></thead>";
+  let rows = "";
+  for(let h=HORAS_INICIO; h<HORAS_FIN; h++){
+    const label = `${String(h).padStart(2,"0")}:00`;
+    rows += `<tr><th>${label}</th>`;
+    DIAS.forEach(dia=>{
+      const people = cruce ? cruceInSlot(dia, h)
+        : viewMode === "huecos" ? gapsInSlot(dia, h)
+        : personsInSlot(dia, h, sedeFiltro);
+      const count = cruce ? (people.length ? selectedNombres.size : 0) : people.length;
+      let bg = "#fff";
+      let cls = "slot empty";
+      if(count>0 && nPersonas>0){
+        const intensity = Math.min(count / Math.max(nPersonas,1), 1);
+        bg = `rgba(111,160,190,${0.25 + intensity*0.65})`;
+        cls = "slot";
+      }
+      const id = `cell-${dia}-${h}`;
+      rows += `<td class="${cls}" id="${id}" style="background:${bg}" data-dia="${dia}" data-h="${h}">
+        ${count>0 ? `<span class="count">${count}</span>` : ""}
+      </td>`;
+    });
+    rows += "</tr>";
+  }
+  table.innerHTML = thead + "<tbody>" + rows + "</tbody>";
+
+  table.querySelectorAll("td.slot").forEach(td=>{
+    td.addEventListener("click", ()=>{
+      document.querySelectorAll("td.selected").forEach(x=>x.classList.remove("selected"));
+      td.classList.add("selected");
+      showDetail(td.dataset.dia, parseInt(td.dataset.h));
+    });
+  });
+}
+
+function showDetail(dia, h){
+  const sedeFiltro = document.getElementById("sedeFiltro").value;
+  const panel = document.getElementById("detailPanel");
+  const label = `${String(h).padStart(2,"0")}:00 – ${String(h+1).padStart(2,"0")}:00`;
+
+  if(enModoCruce()){
+    const items = cruceInSlot(dia, h);
+    const tipoTxt = cruceTipo === "huecos" ? "huecos en común" : "clases en común";
+    if(items.length===0){
+      panel.innerHTML = `<div class="d-title">${dia}, ${label}</div><span class="empty-note">Los seleccionados no tienen ${tipoTxt} en esta hora.</span>`;
+      return;
+    }
+    panel.innerHTML = `<div class="d-title">${dia}, ${label} · ${tipoTxt} de ${selectedNombres.size} estudiante(s)</div>` +
+      items.map(c=>{
+        const quienes = c.participantes.split("|").map(n=>{
+          const p = Object.values(personas).find(x=>x.nombre===n);
+          const color = p ? p.color : "#888";
+          return `<span class="detail-tag"><span class="dot" style="background:${color}"></span>${n}</span>`;
+        }).join("");
+        const info = c.materia === "Hueco en comun"
+          ? `Hueco ${c.inicio}–${c.fin}`
+          : `${c.materia} · ${c.sede} · ${c.inicio}–${c.fin}`;
+        return `<div style="margin:6px 0;"><b>${info}</b><br>${quienes}</div>`;
+      }).join("");
+    return;
+  }
+
+  if(viewMode === "huecos"){
+    const people = gapsInSlot(dia, h);
+    if(people.length===0){
+      panel.innerHTML = `<div class="d-title">${dia}, ${label}</div><span class="empty-note">Nadie tiene hueco en esta hora.</span>`;
+      return;
+    }
+    panel.innerHTML = `<div class="d-title">${dia}, ${label} · ${people.length} persona(s) con hueco</div>` +
+      people.map(p=>`<span class="detail-tag"><span class="dot" style="background:${p.color}"></span>${p.nombre} · hueco ${p.rango} · entre ${p.materia_antes} y ${p.materia_despues}</span>`).join("");
+    return;
+  }
+
+  const people = personsInSlot(dia, h, sedeFiltro);
+  if(people.length===0){
+    panel.innerHTML = `<div class="d-title">${dia}, ${label}</div><span class="empty-note">Nadie tiene clase registrada en esta hora todavía.</span>`;
+    return;
+  }
+  panel.innerHTML = `<div class="d-title">${dia}, ${label} · ${people.length} persona(s) en esta clase</div>` +
+    people.map(p=>`<span class="detail-tag"><span class="dot" style="background:${p.color}"></span>${p.nombre} · ${p.materia} · ${p.sede}</span>`).join("");
+}
+
+// ---------- init ----------
+renderDayToggle();
+updateColorState();
+loadPersonas();
+document.getElementById("refreshBtn").addEventListener("click", loadPersonas);
+setInterval(loadPersonas, 20000); 
+</script>
+</body>
+</html>
