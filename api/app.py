@@ -22,6 +22,45 @@ DB_CONFIG = {
 }
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+SEDES = [
+    "administrativo 40",
+    "Tecnologica Tunal",
+    "Vivero",
+    "Macarena",
+    "Bosa Porvenir",
+    "ECCI sede S",
+    "Aduanilla de paiba",
+    "Calle 34",
+    "Sabio caldas 40",
+    "Santo Domingo",
+    "ECCI Cristancio Luque 19",
+]
+
+MATERIAS = [
+    "Cálculo Diferencial",
+    "Cálculo Integral",
+    "Fisica",
+    "Algebra Lineal",
+    "Electromagnetismo",
+    "POO",
+    "Teoria de Sistemas",
+    "Historia",
+    "Catedra de Democracia",
+    "Grupo de Trabajo",
+    "Electiva",
+    "Cálculo multivariado",
+    "Probabilidad y estadistica",
+    "Ciencias de la computación 1",
+    "Programación avanzada",
+    "Analisis y diseño de sistemas",
+    "Economia",
+    "modelos de programación",
+    "ecuaciones difereciales",
+    "metodos numericos",
+    "ciencias de la computación 2",
+    "Investigación de operaciones 1",
+]
+
 @app.get("/")
 def home():
     return send_from_directory(PROJECT_ROOT, "index.html")
@@ -81,6 +120,14 @@ def initialize_database():
                 FOREIGN KEY (id_materia) REFERENCES materias(id_materia) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
+        cursor.executemany(
+            "INSERT IGNORE INTO sedes (nombre_sede) VALUES (%s)",
+            [(sede,) for sede in SEDES],
+        )
+        cursor.executemany(
+            "INSERT IGNORE INTO materias (nombre_materia) VALUES (%s)",
+            [(materia,) for materia in MATERIAS],
+        )
         conn.commit()
         cursor.close()
     finally:
@@ -119,8 +166,10 @@ def validate_schedule(data):
         if not all(isinstance(bloque.get(key), str) and bloque[key].strip()
                    for key in ("sede", "materia", "inicio", "fin")):
             return "Cada clase necesita sede, materia y horas."
-        if len(bloque["sede"].strip()) > 100 or len(bloque["materia"].strip()) > 100:
-            return "La sede o materia supera la longitud permitida."
+        if bloque["sede"] not in SEDES:
+            return "La sede no es válida. Selecciona una de la lista."
+        if bloque["materia"] not in MATERIAS:
+            return "La materia no es válida. Selecciona una de la lista."
         if not re.fullmatch(r"\d{2}:\d{2}", bloque["inicio"]) or not re.fullmatch(r"\d{2}:\d{2}", bloque["fin"]):
             return "Las horas deben usar el formato HH:MM."
         for hour in (bloque["inicio"], bloque["fin"]):
@@ -142,6 +191,16 @@ def health():
     except mysql.connector.Error:
         app.logger.exception("No se pudo conectar con MySQL")
         return jsonify({"error": "No se pudo conectar con MySQL."}), 503
+
+
+@app.get("/api/sedes")
+def get_sedes():
+    return jsonify(SEDES)
+
+
+@app.get("/api/materias")
+def get_materias():
+    return jsonify(MATERIAS)
 
 
 def database_day(day):

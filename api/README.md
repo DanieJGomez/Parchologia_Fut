@@ -24,10 +24,12 @@ La aplicación web usa `http://127.0.0.1:5000/api`. Si el servidor está en otro
 ## Rutas
 
 - `GET /api/health`: comprueba la conexión con MySQL.
+- `GET /api/sedes`: devuelve la lista predefinida de sedes.
+- `GET /api/materias`: devuelve la lista predefinida de materias.
 - `GET /api/estudiantes`: lista estudiantes y sus bloques.
 - `GET /api/huecos`: calcula los huecos de cada estudiante por día (intervalos libres entre su primera y última clase). Responde `[{ nombre, color, dia, huecos: [{ inicio, fin, materia_antes, materia_despues }] }]`.
 - `GET /api/cruce?nombres=A,B&tipo=clases|huecos`: cruce (inner join) entre los estudiantes seleccionados. Con `tipo=clases` devuelve los bloques con misma materia, sede y horario que comparten **todos**; con `tipo=huecos`, la intersección de sus huecos. Cada fila incluye el campo `participantes` separado por `|`.
-- `POST /api/estudiantes`: crea o actualiza el horario. Recibe `{ "nombre", "color", "bloques" }`.
+- `POST /api/estudiantes`: crea o actualiza el horario. Recibe `{ "nombre", "color", "bloques" }`. La sede y la materia de cada bloque deben pertenecer a las listas predefinidas (`GET /api/sedes` y `GET /api/materias`); si no, la API responde `400`.
 - `DELETE /api/estudiantes/<nombre>`: elimina al estudiante y sus bloques.
 
 El color se almacena en formato hexadecimal; la API responde `409` si ya está asignado a otro estudiante. La API convierte los días `Miércoles` y `Sábado` enviados por la aplicación a `Miercoles` y `Sabado` en MySQL, y los vuelve a presentar con tilde al consultar los horarios.

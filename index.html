@@ -40,12 +40,10 @@
       <div class="day-toggle" id="dayToggle"></div>
 
       <label for="sede">Sede</label>
-      <input type="text" id="sede" list="sedeList" placeholder="Ej: Macarena">
-      <datalist id="sedeList"></datalist>
+      <select id="sede"></select>
 
       <label for="materia">Materia </label>
-      <input type="text" id="materia" list="materiaList" placeholder="Ej: Cálculo II">
-      <datalist id="materiaList"></datalist>
+      <select id="materia"></select>
 
       <div class="row3">
         <div>
@@ -128,6 +126,8 @@ let selectedNombres = new Set();
 let cruceTipo = "clases";
 let cruceData = [];
 let selectedCell = null;
+let sedesCatalogo = [];
+let materiasCatalogo = [];
 
 // ---------- utilidades ----------
 function colorInUse(color, nombre = ""){
@@ -187,8 +187,8 @@ document.getElementById("addBloque").onclick = ()=>{
   const inicio = document.getElementById("inicio").value;
   const fin = document.getElementById("fin").value;
   const status = document.getElementById("statusMsg");
-    if(!sede){ status.textContent = "Escribe la sede de esta clase."; status.className="status-msg err"; return; }
-  if(!materia){ status.textContent = "Escribe la materia de esta clase."; status.className="status-msg err"; return; }
+    if(!sede){ status.textContent = "Selecciona la sede de esta clase."; status.className="status-msg err"; return; }
+  if(!materia){ status.textContent = "Selecciona la materia de esta clase."; status.className="status-msg err"; return; }
   if(!inicio || !fin || toMin(fin) <= toMin(inicio)){
     status.textContent = "La hora final debe ser después de la inicial."; status.className="status-msg err"; return;
   }
@@ -342,23 +342,38 @@ function renderCompas(){
 function renderSedeFiltro(){
   const sel = document.getElementById("sedeFiltro");
   const current = sel.value;
-  const sedes = new Set();
-  const materias = new Set();
-  Object.values(personas).forEach(p=>p.bloques.forEach(b=>{ sedes.add(b.sede); materias.add(b.materia); }));
-  const datalist = document.getElementById("sedeList");
-  datalist.innerHTML = "";
   sel.innerHTML = '<option value="">Todas las sedes</option>';
-  [...sedes].sort().forEach(s=>{
-    const o1 = document.createElement("option"); o1.value = s; sel.appendChild(o1);
-    const o2 = document.createElement("option"); o2.value = s; datalist.appendChild(o2);
+  sedesCatalogo.forEach(s=>{
+    const o = document.createElement("option"); o.value = s; o.textContent = s; sel.appendChild(o);
   });
   sel.value = current;
+}
 
-  const materiaDatalist = document.getElementById("materiaList");
-  materiaDatalist.innerHTML = "";
-  [...materias].sort().forEach(m=>{
-    const o = document.createElement("option"); o.value = m; materiaDatalist.appendChild(o);
+// ---------- catálogos de sedes y materias (listas predefinidas) ----------
+async function loadCatalogos(){
+  try{
+    const [resS, resM] = await Promise.all([
+      fetch(`${API_URL}/sedes`),
+      fetch(`${API_URL}/materias`)
+    ]);
+    if(resS.ok) sedesCatalogo = await resS.json();
+    if(resM.ok) materiasCatalogo = await resM.json();
+  }catch(e){
+    console.error("No se pudieron leer los catálogos", e);
+  }
+  fillSelect("sede", sedesCatalogo, "Selecciona una sede");
+  fillSelect("materia", materiasCatalogo, "Selecciona una materia");
+  renderSedeFiltro();
+}
+
+function fillSelect(id, valores, placeholder){
+  const sel = document.getElementById(id);
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">${placeholder}</option>`;
+  valores.forEach(v=>{
+    const o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o);
   });
+  if(valores.includes(prev)) sel.value = prev;
 }
 document.getElementById("sedeFiltro").addEventListener("change", ()=>{ selectedCell=null; renderCombo(); });
 
@@ -515,6 +530,7 @@ function showDetail(dia, h){
 // ---------- init ----------
 renderDayToggle();
 updateColorState();
+loadCatalogos();
 loadPersonas();
 document.getElementById("refreshBtn").addEventListener("click", loadPersonas);
 setInterval(loadPersonas, 20000); 
