@@ -117,7 +117,8 @@
 const DIAS = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
 const HORAS_INICIO = 6;  // 06:00
 const HORAS_FIN = 21;    // hasta 21:00
-const API_URL = "http://127.0.0.1:5000/api";
+const API_BASE = location.hostname.endsWith("github.io")
+  ? "https://parchologia-api.onrender.com" : "";
 
 
 let currentDay = DIAS[0];
@@ -229,7 +230,7 @@ document.getElementById("saveBtn").onclick = async ()=>{
   }
   status.textContent = "Guardando..."; status.className="status-msg";
   try{
-    const res = await fetch(`${API_URL}/estudiantes`, {
+    const res = await fetch(`${API_BASE}/api/estudiantes`, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify(data)
@@ -246,13 +247,13 @@ document.getElementById("saveBtn").onclick = async ()=>{
 // ---------- cargar personas desde la API ----------
 async function loadPersonas(){
   try{
-    const res = await fetch(`${API_URL}/estudiantes`);
+    const res = await fetch(`${API_BASE}/api/estudiantes`);
     if(!res.ok) throw new Error("respuesta no ok");
     const arr = await res.json();
     personas = {};
     arr.forEach(d=>{ personas[d.nombre.toLowerCase()] = d; });
     try{
-      const resH = await fetch(`${API_URL}/huecos`);
+      const resH = await fetch(`${API_BASE}/api/huecos`);
       if(!resH.ok) throw new Error("respuesta no ok");
       huecosData = await resH.json();
     }catch(e){
@@ -284,7 +285,7 @@ async function loadCruce(){
   document.getElementById("sedeFiltro").disabled = true;
   try{
     const params = new URLSearchParams({ nombres:[...selectedNombres].join(","), tipo:cruceTipo });
-    const res = await fetch(`${API_URL}/cruce?${params}`);
+    const res = await fetch(`${API_BASE}/api/cruce?${params}`);
     if(!res.ok) throw new Error("respuesta no ok");
     cruceData = await res.json();
   }catch(e){
@@ -332,7 +333,7 @@ function renderCompas(){
       if(confirm(`¿Eliminar el horario de ${p.nombre}?`)){
         del.textContent = "...";
         try{
-          await fetch(`${API_URL}/estudiantes/${encodeURIComponent(p.nombre)}`, { method:"DELETE" });
+          await fetch(`${API_BASE}/api/estudiantes/${encodeURIComponent(p.nombre)}`, { method:"DELETE" });
         }catch(e){ /* seguimos e intentamos recargar igual */ }
         await loadPersonas();
       }
@@ -356,8 +357,8 @@ function renderSedeFiltro(){
 async function loadCatalogos(){
   try{
     const [resS, resM] = await Promise.all([
-      fetch(`${API_URL}/sedes`),
-      fetch(`${API_URL}/materias`)
+      fetch(`${API_BASE}/api/sedes`),
+      fetch(`${API_BASE}/api/materias`)
     ]);
     if(resS.ok) sedesCatalogo = await resS.json();
     if(resM.ok) materiasCatalogo = await resM.json();

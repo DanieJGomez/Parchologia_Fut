@@ -9,7 +9,7 @@ from mysql.connector import IntegrityError
 
 app = Flask(__name__)
 load_dotenv()
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app, resources={r"/api/*": {"origins": ["https://daniejgomez.github.io", "http://127.0.0.1:5000"]}})
 
 DB_CONFIG = {
     "host": os.getenv("MYSQL_HOST", "127.0.0.1"),
@@ -132,6 +132,12 @@ def initialize_database():
         cursor.close()
     finally:
         conn.close()
+
+
+try:
+    initialize_database()
+except Exception:
+    app.logger.exception("No se pudo preparar la base de datos Parchologia")
 
 
 @contextmanager
@@ -473,9 +479,4 @@ def delete_student(nombre):
         return jsonify({"error": "No se pudo eliminar el estudiante."}), 503
 
 if __name__ == "__main__":
-    try:
-        initialize_database()
-    except mysql.connector.Error:
-        app.logger.exception("No se pudo preparar la base de datos Parchologia")
-        raise
     app.run(host=os.getenv("API_HOST", "127.0.0.1"), port=int(os.getenv("API_PORT", "5000")), debug=False)
