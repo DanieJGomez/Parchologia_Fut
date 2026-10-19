@@ -464,6 +464,169 @@ def get_cruce():
     return jsonify(resultado)
 
 
+@app.get("/api/compararParametros")
+def comparar_parametros():
+    nombres = [n.strip() for n in request.args.get("nombres", "").split(",") if n.strip()]
+    tipo = request.args.get("tipo", "")
+    modo = request.args.get("modo", "")
+    misma_sesion = request.args.get("misma_sesion", "0")
+    if len(nombres) < 2:
+        return jsonify({"error": "Selecciona al menos dos estudiantes."}), 400
+    if len(set(nombres)) != len(nombres):
+        return jsonify({"error": "No repitas nombres en la comparación."}), 400
+    if tipo not in ("materias", "huecos"):
+        return jsonify({"error": "El tipo debe ser 'materias' o 'huecos'."}), 400
+    if modo not in ("inner", "no_comparten", "left", "right"):
+        return jsonify({"error": "El modo debe ser 'inner', 'no_comparten', 'left' o 'right'."}), 400
+    if len(nombres) > 2 and modo != "inner":
+        return jsonify({"error": "Con tres o más estudiantes solo se permite el modo 'inner'."}), 400
+    if len(nombres) == 2 and modo not in ("inner", "no_comparten", "left", "right"):
+        return jsonify({"error": "Modo no válido para dos estudiantes."}), 400
+    if tipo == "materias" and misma_sesion not in ("0", "1"):
+        return jsonify({"error": "misma_sesion debe ser 0 o 1."}), 400
+
+    fmt = ",".join(["%s"] * len(nombres))
+    try:
+        with database_cursor(dictionary=True) as (_, cursor):
+            cursor.execute(f"SELECT nombre FROM estudiantes WHERE nombre IN ({fmt})", nombres)
+            existentes = {row["nombre"] for row in cursor.fetchall()}
+            no_existen = [nombre for nombre in nombres if nombre not in existentes]
+            if no_existen:
+                return jsonify({"error": "No existen estos estudiantes: " + ", ".join(no_existen) + "."}), 400
+
+            if tipo == "materias":
+                if misma_sesion == "1":
+                    having, having_params = {
+                        "inner": ("COUNT(DISTINCT e.nombre) = %s", [len(nombres)]),
+                        "no_comparten": ("COUNT(DISTINCT e.nombre) = 1", []),
+                        "left": ("SUM(e.nombre = %s) > 0 AND SUM(e.nombre = %s) = 0", [nombres[0], nombres[1]]),
+                        "right": ("SUM(e.nombre = %s) > 0 AND SUM(e.nombre = %s) = 0", [nombres[1], nombres[0]]),
+                    }[modo]
+                    sql = f"""
+                        SELECT h.dia, GROUP_CONCAT(DISTINCT s.nombre_sede ORDER BY s.nombre_sede SEPARATOR ', ') AS sede,
+                               m.nombre_materia AS materia,
+                               TIME_FORMAT(h.hora_inicio, '%H:%i') AS inicio,
+                               TIME_FORMAT(h.hora_fin, '%H:%i') AS fin,
+                               GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre SEPARATOR '|') AS de
+                        FROM huecos h
+                        JOIN estudiantes e ON e.id_estudiante = h.id_estudiante
+                        JOIN sedes s ON s.id_sede = h.id_sede
+                        JOIN materias m ON m.id_materia = h.id_materia
+                        WHERE e.nombre IN ({fmt})
+                        GROUP BY h.dia, m.id_materia, m.nombre_materia, h.hora_inicio, h.hora_fin
+                        HAVING {having}
+                        ORDER BY h.dia, h.hora_inicio
+                    """
+                    params = [*nombres, *having_params]
+                else:
+                    having, having_params = {
+                        "inner": ("COUNT(DISTINCT e2.nombre) = %s", [len(nombres)]),
+                        "no_comparten": ("COUNT(DISTINCT e2.nombre) = 1", []),
+                        "left": ("SUM(e2.nombre = %s) > 0 AND SUM(e2.nombre = %s) = 0", [nombres[0], nombres[1]]),
+                        "right": ("SUM(e2.nombre = %s) > 0 AND SUM(e2.nombre = %s) = 0", [nombres[1], nombres[0]]),
+                    }[modo]
+                    sql = f"""
+                        SELECT h.dia, s.nombre_sede AS sede, m.nombre_materia AS materia,
+                               TIME_FORMAT(h.hora_inicio, '%H:%i') AS inicio,
+                               TIME_FORMAT(h.hora_fin, '%H:%i') AS fin,
+                               GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre SEPARATOR '|') AS de
+                        FROM huecos h
+                        JOIN estudiantes e ON e.id_estudiante = h.id_estudiante
+                        JOIN sedes s ON s.id_sede = h.id_sede
+                        JOIN materias m ON m.id_materia = h.id_materia
+                        WHERE e.nombre IN ({fmt})
+                          AND m.id_materia IN (
+                              SELECT m2.id_materia
+                              FROM huecos h2
+                              JOIN estudiantes e2 ON e2.id_estudiante = h2.id_estudiante
+                              JOIN materias m2 ON m2.id_materia = h2.id_materia
+                              WHERE e2.nombre IN ({fmt})
+                              GROUP BY m2.id_materia
+                              HAVING {having}
+                          )
+                        GROUP BY h.dia, s.nombre_sede, m.id_materia, m.nombre_materia, h.hora_inicio, h.hora_fin
+                        ORDER BY h.dia, h.hora_inicio
+                    """
+                    params = [*nombres, *nombres, *having_params]
+                cursor.execute(sql, params)
+            else:
+                cursor.execute(f"""
+                    SELECT e.nombre, h.dia,
+                           TIME_FORMAT(h.hora_inicio, '%H:%i') AS inicio,
+                           TIME_FORMAT(h.hora_fin, '%H:%i') AS fin
+                    FROM huecos h
+                    JOIN estudiantes e ON e.id_estudiante = h.id_estudiante
+                    WHERE e.nombre IN ({fmt})
+                    ORDER BY h.dia, h.hora_inicio
+                """, nombres)
+            rows = cursor.fetchall()
+    except mysql.connector.Error:
+        app.logger.exception("No se pudo calcular la comparación")
+        return jsonify({"error": "No se pudo calcular la comparación."}), 503
+
+    if tipo == "materias":
+        bloques = [{**row, "dia": api_day(row["dia"]), "de": row["de"].split("|") if row["de"] else []}
+                   for row in rows]
+    else:
+        por_nombre = {nombre: [] for nombre in nombres}
+        for row in rows:
+            row["dia"] = api_day(row["dia"])
+            por_nombre[row["nombre"]].append(row)
+
+        def to_min(hour):
+            hh, mm = map(int, hour.split(":"))
+            return hh * 60 + mm
+
+        huecos_por_persona = {nombre: {} for nombre in nombres}
+        for nombre, clases in por_nombre.items():
+            por_dia = {}
+            for clase in clases:
+                por_dia.setdefault(clase["dia"], []).append(clase)
+            for dia, bloques_dia in por_dia.items():
+                huecos = []
+                limite = None
+                for bloque in sorted(bloques_dia, key=lambda b: b["inicio"]):
+                    if limite is not None and bloque["inicio"] > limite:
+                        huecos.append((limite, bloque["inicio"]))
+                    limite = bloque["fin"] if limite is None else max(limite, bloque["fin"])
+                huecos_por_persona[nombre][dia] = huecos
+
+        particiones = []
+        dias = {dia for nombre in nombres for dia in huecos_por_persona[nombre]}
+        for dia in dias:
+            limites = sorted({to_min(hora) for nombre in nombres
+                              for ini, fin in huecos_por_persona[nombre].get(dia, [])
+                              for hora in (ini, fin)})
+            for ini, fin in zip(limites, limites[1:]):
+                de = [nombre for nombre in nombres if any(
+                    to_min(h_ini) <= ini and to_min(h_fin) >= fin
+                    for h_ini, h_fin in huecos_por_persona[nombre].get(dia, []))]
+                if modo == "inner":
+                    incluir = len(de) == len(nombres)
+                elif modo == "no_comparten":
+                    incluir = len(de) == 1
+                elif modo == "left":
+                    incluir = nombres[0] in de and nombres[1] not in de
+                else:
+                    incluir = nombres[1] in de and nombres[0] not in de
+                if incluir:
+                    particiones.append((dia, ini, fin, de))
+
+        bloques = []
+        for dia, ini, fin, de in particiones:
+            inicio, fin = f"{ini // 60:02d}:{ini % 60:02d}", f"{fin // 60:02d}:{fin % 60:02d}"
+            if (bloques and bloques[-1]["dia"] == dia and bloques[-1]["fin"] == inicio
+                    and bloques[-1]["de"] == de):
+                bloques[-1]["fin"] = fin
+            else:
+                bloques.append({"dia": dia, "sede": "", "materia": "Hueco libre", "inicio": inicio,
+                                "fin": fin, "de": de})
+
+    dias_orden = {"Lunes": 0, "Martes": 1, "Mi\u00e9rcoles": 2, "Jueves": 3, "Viernes": 4, "S\u00e1bado": 5}
+    bloques.sort(key=lambda b: (dias_orden.get(b["dia"], 99), b["inicio"], b["materia"]))
+    return jsonify({"tipo": tipo, "modo": modo, "nombres": nombres, "bloques": bloques})
+
+
 @app.delete("/api/estudiantes/<path:nombre>")
 def delete_student(nombre):
     try:

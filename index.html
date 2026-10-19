@@ -86,11 +86,20 @@
           <option value="">Todas las sedes</option>
         </select>
         <button class="btn" id="refreshBtn" style="background:var(--paper-alt); color:var(--ink); border:1px solid var(--line); padding:8px 12px; font-size:13px;">↻ Actualizar</button>
-        <div id="cruceBar" style="display:none; align-items:center; gap:6px;">
-          <select id="cruceTipo">
-            <option value="clases">Clases en común (misma materia, hora y sede)</option>
-            <option value="huecos">Huecos en común</option>
+        <div id="cruceBar" style="display:none; align-items:center; gap:6px; flex-wrap:wrap;">
+          <select id="compararTipo" aria-label="Qué comparar">
+            <option value="materias">Materias</option>
+            <option value="huecos">Huecos libres</option>
           </select>
+          <select id="compararModo" aria-label="Modo de comparación">
+            <option value="inner">En común</option>
+            <option value="no_comparten">No comparten</option>
+            <option value="left">Solo A</option>
+            <option value="right">Solo B</option>
+          </select>
+          <label id="mismaSesionLabel" style="display:flex;align-items:center;gap:5px;margin:0;white-space:nowrap;">
+            <input id="mismaSesion" type="checkbox"> Misma sesión
+          </label>
         </div>
         <div class="legend">
           <span>Menos</span>
@@ -127,7 +136,8 @@ let personas = {};
 let huecosData = [];
 let viewMode = "clases";
 let selectedNombres = new Set();
-let cruceTipo = "clases";
+let compararTipo = "materias";
+let compararModo = "inner";
 let cruceData = [];
 let selectedCell = null;
 let sedesCatalogo = [];
@@ -282,19 +292,28 @@ async function loadCruce(){
     return;
   }
   bar.style.display = "flex";
+  const modo = document.getElementById("compararModo");
+  [...modo.options].forEach(option=>{ option.disabled = selectedNombres.size > 2 && option.value !== "inner"; });
+  if(selectedNombres.size > 2 && compararModo !== "inner") compararModo = "inner";
+  modo.value = compararModo;
+  document.getElementById("mismaSesionLabel").style.display = compararTipo === "materias" ? "flex" : "none";
   document.getElementById("sedeFiltro").disabled = true;
   try{
-    const params = new URLSearchParams({ nombres:[...selectedNombres].join(","), tipo:cruceTipo });
-    const res = await fetch(`${API_BASE}/api/cruce?${params}`);
+    const params = new URLSearchParams({ nombres:[...selectedNombres].join(","), tipo:compararTipo, modo:compararModo,
+      misma_sesion:document.getElementById("mismaSesion").checked ? "1" : "0" });
+    const res = await fetch(`${API_BASE}/api/compararParametros?${params}`);
     if(!res.ok) throw new Error("respuesta no ok");
-    cruceData = await res.json();
+    const resultado = await res.json();
+    cruceData = resultado.bloques.map(b=>({...b, participantes:b.de.join("|"), materia:b.materia === "Hueco libre" ? "Hueco en comun" : b.materia}));
   }catch(e){
     console.error("No se pudo calcular el cruce", e);
     cruceData = [];
   }
   renderCombo();
 }
-document.getElementById("cruceTipo").addEventListener("change", (e)=>{ cruceTipo = e.target.value; selectedCell=null; loadCruce(); });
+document.getElementById("compararTipo").addEventListener("change", (e)=>{ compararTipo = e.target.value; selectedCell=null; loadCruce(); });
+document.getElementById("compararModo").addEventListener("change", (e)=>{ compararModo = e.target.value; selectedCell=null; loadCruce(); });
+document.getElementById("mismaSesion").addEventListener("change", ()=>{ selectedCell=null; loadCruce(); });
 
 function enModoCruce(){ return selectedNombres.size >= 2; }
 
@@ -315,18 +334,18 @@ function renderCompas(){
     chk.className = "compa-check";
     chk.title = "Selecciona 2 o más para cruzar sus horarios";
     chk.checked = selectedNombres.has(p.nombre);
-    chk.onclick = ()=>{
+    chk.addEventListener("change", ()=>{
       if(chk.checked) selectedNombres.add(p.nombre); else selectedNombres.delete(p.nombre);
       loadCruce();
-    };
-    el.appendChild(chk);
-    el.innerHTML += `
+    });
+    el.innerHTML = `
       <span class="compa-dot" style="background:${p.color}"></span>
       <span class="compa-info">
         <div class="compa-name">${p.nombre}</div>
         <div class="compa-meta">${p.bloques.length} clase(s) · ${materias}</div>
       </span>
     `;
+    el.prepend(chk);
     const del = document.createElement("button");
     del.className = "compa-del"; del.textContent = "eliminar";
     del.onclick = async ()=>{
@@ -458,7 +477,7 @@ function renderCombo(){
       const people = cruce ? cruceInSlot(dia, h)
         : viewMode === "huecos" ? gapsInSlot(dia, h)
         : personsInSlot(dia, h, sedeFiltro);
-      const count = cruce ? (people.length ? selectedNombres.size : 0) : people.length;
+      const count = cruce ? new Set(people.flatMap(item=>item.participantes.split("|").filter(Boolean))).size : people.length;
       let bg = "#fff";
       let cls = "slot empty";
       if(count>0 && nPersonas>0){
@@ -491,7 +510,8 @@ function showDetail(dia, h){
 
   if(enModoCruce()){
     const items = cruceInSlot(dia, h);
-    const tipoTxt = cruceTipo === "huecos" ? "huecos en común" : "clases en común";
+    const modoTxt = {inner:"en común", no_comparten:"que no comparten", left:"solo de A", right:"solo de B"}[compararModo];
+    const tipoTxt = compararTipo === "huecos" ? `huecos ${modoTxt}` : `materias ${modoTxt}`;
     if(items.length===0){
       panel.innerHTML = `<div class="d-title">${dia}, ${label}</div><span class="empty-note">Los seleccionados no tienen ${tipoTxt} en esta hora.</span>`;
       return;
