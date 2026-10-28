@@ -41,9 +41,11 @@
 
       <label for="sede">Sede</label>
       <select id="sede"></select>
+      <input id="sedeOtra" type="text" maxlength="100" placeholder="Escribe la sede" style="display:none">
 
       <label for="materia">Materia </label>
       <select id="materia"></select>
+      <input id="materiaOtra" type="text" maxlength="100" placeholder="Escribe la materia" style="display:none">
 
       <div class="row3">
         <div>
@@ -129,7 +131,6 @@ const HORAS_FIN = 21;    // hasta 21:00
 const API_BASE = location.hostname.endsWith("github.io")
   ? "https://parchologia-api.onrender.com" : "";
 
-
 let currentDay = DIAS[0];
 let pendingBloques = []; 
 let personas = {};
@@ -196,8 +197,10 @@ function updateSaveState(){
 }
 
 document.getElementById("addBloque").onclick = ()=>{
-  const sede = document.getElementById("sede").value.trim();
-  const materia = document.getElementById("materia").value.trim();
+  const sedeSelect = document.getElementById("sede");
+  const materiaSelect = document.getElementById("materia");
+  const sede = (sedeSelect.value === "__otra__" ? document.getElementById("sedeOtra").value : sedeSelect.value).trim();
+  const materia = (materiaSelect.value === "__otra__" ? document.getElementById("materiaOtra").value : materiaSelect.value).trim();
   const inicio = document.getElementById("inicio").value;
   const fin = document.getElementById("fin").value;
   const status = document.getElementById("statusMsg");
@@ -396,8 +399,16 @@ function fillSelect(id, valores, placeholder){
   valores.forEach(v=>{
     const o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o);
   });
+  const otra = document.createElement("option"); otra.value = "__otra__"; otra.textContent = "Otra..."; sel.appendChild(otra);
   if(valores.includes(prev)) sel.value = prev;
 }
+[["sede", "sedeOtra"], ["materia", "materiaOtra"]].forEach(([selectId, inputId])=>{
+  const select = document.getElementById(selectId), input = document.getElementById(inputId);
+  select.addEventListener("change", ()=>{
+    input.style.display = select.value === "__otra__" ? "block" : "none";
+    if(select.value !== "__otra__") input.value = "";
+  });
+});
 document.getElementById("sedeFiltro").addEventListener("change", ()=>{ selectedCell=null; renderCombo(); });
 
 // ---------- toggle Clases / Huecos ----------

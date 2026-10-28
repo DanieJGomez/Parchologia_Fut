@@ -172,10 +172,8 @@ def validate_schedule(data):
         if not all(isinstance(bloque.get(key), str) and bloque[key].strip()
                    for key in ("sede", "materia", "inicio", "fin")):
             return "Cada clase necesita sede, materia y horas."
-        if bloque["sede"] not in SEDES:
-            return "La sede no es válida. Selecciona una de la lista."
-        if bloque["materia"] not in MATERIAS:
-            return "La materia no es válida. Selecciona una de la lista."
+        if len(bloque["sede"].strip()) > 100 or len(bloque["materia"].strip()) > 100:
+            return "La sede y la materia deben tener máximo 100 caracteres."
         if not re.fullmatch(r"\d{2}:\d{2}", bloque["inicio"]) or not re.fullmatch(r"\d{2}:\d{2}", bloque["fin"]):
             return "Las horas deben usar el formato HH:MM."
         for hour in (bloque["inicio"], bloque["fin"]):
@@ -201,12 +199,24 @@ def health():
 
 @app.get("/api/sedes")
 def get_sedes():
-    return jsonify(SEDES)
+    try:
+        with database_cursor() as (_, cursor):
+            cursor.execute("SELECT nombre_sede FROM sedes ORDER BY nombre_sede")
+            return jsonify([row[0] for row in cursor.fetchall()])
+    except mysql.connector.Error:
+        app.logger.exception("No se pudieron consultar las sedes")
+        return jsonify({"error": "No se pudieron consultar las sedes."}), 503
 
 
 @app.get("/api/materias")
 def get_materias():
-    return jsonify(MATERIAS)
+    try:
+        with database_cursor() as (_, cursor):
+            cursor.execute("SELECT nombre_materia FROM materias ORDER BY nombre_materia")
+            return jsonify([row[0] for row in cursor.fetchall()])
+    except mysql.connector.Error:
+        app.logger.exception("No se pudieron consultar las materias")
+        return jsonify({"error": "No se pudieron consultar las materias."}), 503
 
 
 def database_day(day):
